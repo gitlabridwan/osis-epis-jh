@@ -77,12 +77,13 @@ export function validateBackup(p:any):Ledger {
     return {id:text(b.id,"ID"),memberId:b.memberId,period,amount:amount(b.amount),createdAt:timestamp(b.createdAt),voidedAt:b.voidedAt?timestamp(b.voidedAt):null,voidReason:optional(b.voidReason,200)};
   });
   if(new Set(bills.map(b=>b.id)).size!==bills.length)throw new LedgerError("ID tagihan berulang.");
-  const audit:Audit[]=Array.isArray(p.audit)?p.audit.slice(-2000).map((a:any)=>({id:text(a.id,"ID"),at:timestamp(a.at),action:text(a.action,"Aksi"),detail:text(a.detail,"Detail",1000),actor:text(a.actor,"Pelaksana",80)})):[];
+  const audit:Audit[]=Array.isArray(p.audit)?p.audit.slice(-2000).map((a:any)=>({id:text(a.id,"ID"),at:timestamp(a.at),action:text(a.action,"Aksi"),detail:text(a.detail,"Detail",2000),actor:text(a.actor,"Pelaksana",80)})):[];
   const state:Ledger={schemaVersion:1,settings,members,transactions,bills,audit,appliedRequests:[]};checkCash(state);
   if(!settings.openingCashConfirmed && transactions.some(t=>t.kind==="expense" && !t.voidedAt))throw new LedgerError("Cadangan pengeluaran membutuhkan saldo awal yang sudah dikonfirmasi.");return state;
 }
 export function applyAction(original:Ledger,action:string,p:any,requestId:string,actor="Bendahara"):{state:Ledger;message:string} {
   if(original.appliedRequests.includes(requestId))return {state:original,message:"Perubahan sudah tersimpan."};
+  if(!p || typeof p!=="object" || Array.isArray(p))throw new LedgerError("Isi perubahan tidak valid.");
   let state:Ledger=structuredClone(original);const now=new Date().toISOString(),id=()=>crypto.randomUUID();let message="",detail="";
   switch(action){
     case "saveMember":{
@@ -92,6 +93,15 @@ export function applyAction(original:Ledger,action:string,p:any,requestId:string
       if(old)state.members=state.members.map(a=>a.id===m.id?m:a);else state.members.push(m);
       message=old?"Data anggota diperbarui.":"Anggota berhasil ditambahkan.";detail=m.name+" · "+m.division+" · "+(m.active?"aktif":"diarsipkan")+" · tunggakan awal "+m.openingDue+", kelebihan awal "+m.openingCredit;break;
     }
+    case "deleteMember":{
+      const m=state.members.find(m=>m.id===p.id);if(!m)throw new LedgerError("Anggota tidak ditemukan.",404);
+      const reason=text(p.reason,"Alasan penghapusan",200);
+      if(state.transactions.some(t=>t.memberId===m.id) || state.bills.some(b=>b.memberId===m.id))
+        throw new LedgerError("Anggota memiliki riwayat transaksi atau tagihan. Gunakan Edit anggota lalu pilih Diarsipkan agar riwayat tetap utuh.",409);
+      if(m.openingDue || m.openingCredit)throw new LedgerError("Anggota masih memiliki saldo iuran awal. Selesaikan saldo atau arsipkan anggota.",409);
+      state.members=state.members.filter(a=>a.id!==m.id);message="Anggota berhasil dihapus.";
+      detail=m.name+" · "+m.division+" · alasan: "+reason;break;
+    }
     case "createBills":{
       const period=month(p.period),rate=amount(p.amount,"Iuran");if(period<state.settings.billingStartMonth || period<state.settings.snapshotDate.slice(0,7))throw new LedgerError("Tagihan dimulai dari "+state.settings.billingStartMonth+". Ubah bulan mulai di Pengaturan jika diperlukan.");
       const eligible=state.members.filter(m=>m.active && m.joinedMonth<=period && !state.bills.some(b=>b.memberId===m.id && b.period===period && !b.voidedAt));
@@ -99,22 +109,48 @@ export function applyAction(original:Ledger,action:string,p:any,requestId:string
       for(const m of eligible)state.bills.push({id:id(),memberId:m.id,period,amount:rate,createdAt:now,voidedAt:null,voidReason:""});
       message=eligible.length+" tagihan berhasil dibuat.";detail=period+" · "+eligible.length+" anggota · Rp"+rate+" per anggota";break;
     }
+    case "saveBill":{
+      const old=p.id?state.bills.find(b=>b.id===p.id):undefined;
+      if(p.id && !old)throw new LedgerError("Tagihan tidak ditemukan.",404);
+      if(old?.voidedAt)throw new LedgerError("Tagihan yang sudah dihapus tidak dapat diedit.",409);
+      const m=state.members.find(m=>m.id===p.memberId);if(!m)throw new LedgerError("Pilih anggota untuk tagihan.");
+      if(!old && !m.active)throw new LedgerError("Tagihan baru hanya untuk anggota aktif.");
+      const period=month(p.period),rate=amount(p.amount,"Iuran");
+      if(period<state.settings.snapshotDate.slice(0,7) || ((!old || period!==old.period) && period<state.settings.billingStartMonth) || ((!old || old.memberId!==m.id || old.period!==period) && period<m.joinedMonth))
+        throw new LedgerError("Periode tagihan tidak boleh sebelum bulan mulai iuran atau bulan bergabung anggota.");
+      if(state.bills.some(b=>b.id!==old?.id && b.memberId===m.id && b.period===period && !b.voidedAt))
+        throw new LedgerError("Anggota sudah memiliki tagihan aktif untuk bulan ini.",409);
+      const reason=old?text(p.correctionReason,"Alasan perubahan",200):"";
+      const bill:Bill={id:old?.id||id(),memberId:m.id,period,amount:rate,createdAt:old?.createdAt||now,voidedAt:null,voidReason:""};
+      if(old)state.bills=state.bills.map(b=>b.id===old.id?bill:b);else state.bills.push(bill);
+      message=old?"Tagihan berhasil diperbarui.":"Tagihan berhasil ditambahkan.";
+      detail=old?"Sebelum: "+state.members.find(m=>m.id===old.memberId)?.name+" · "+old.period+" · Rp"+old.amount+". Sesudah: "+m.name+" · "+period+" · Rp"+rate+". Alasan: "+reason:m.name+" · "+period+" · Rp"+rate;break;
+    }
     case "saveTransaction":{
+      const old=p.id?state.transactions.find(t=>t.id===p.id):undefined;
+      if(p.id && !old)throw new LedgerError("Transaksi tidak ditemukan.",404);
+      if(old?.voidedAt)throw new LedgerError("Transaksi yang sudah dihapus tidak dapat diedit.",409);
+      const reason=old?text(p.correctionReason,"Alasan perubahan",200):"";
       if(!["dues","income","expense"].includes(p.kind))throw new LedgerError("Jenis transaksi tidak valid.");const d=date(p.date);
       if(d<state.settings.snapshotDate || d>today())throw new LedgerError("Tanggal harus sejak "+state.settings.snapshotDate+" sampai hari ini.");
       const m=p.kind==="dues"?state.members.find(m=>m.id===p.memberId):null;if(p.kind==="dues" && !m)throw new LedgerError("Pilih anggota untuk pembayaran iuran.");
       if(p.kind==="expense" && !state.settings.openingCashConfirmed)throw new LedgerError("Konfirmasi saldo kas awal di Pengaturan sebelum mencatat pengeluaran.");
       if(!["Tunai","Transfer","E-wallet"].includes(p.method))throw new LedgerError("Metode pembayaran tidak valid.");
-      const t:Transaction={id:id(),kind:p.kind,memberId:m?.id||null,amount:amount(p.amount),date:d,title:text(p.title,"Keterangan",180),category:p.kind==="dues"?"Iuran anggota":text(p.category,"Kategori",80),method:p.method,reference:optional(p.reference,100),createdAt:now,voidedAt:null,voidReason:""};
-      state.transactions.push(t);checkCash(state);message="Transaksi berhasil disimpan.";detail=(m?m.name+" · ":"")+t.title+" · Rp"+t.amount+" · "+t.date+" · "+t.method;break;
+      const t:Transaction={id:old?.id||id(),kind:p.kind,memberId:m?.id||null,amount:amount(p.amount),date:d,title:text(p.title,"Keterangan",180),category:p.kind==="dues"?"Iuran anggota":text(p.category,"Kategori",80),method:p.method,reference:optional(p.reference,100),createdAt:old?.createdAt||now,voidedAt:null,voidReason:""};
+      if(old)state.transactions=state.transactions.map(a=>a.id===old.id?t:a);else state.transactions.push(t);
+      checkCash(state);message=old?"Transaksi berhasil diperbarui.":"Transaksi berhasil disimpan.";
+      const describe=(a:Transaction)=>[a.kind,state.members.find(m=>m.id===a.memberId)?.name||"—","Rp"+a.amount,a.date,a.title,a.category,a.method,a.reference||"—"].join(" · ");
+      detail=old?"Sebelum: "+describe(old)+". Sesudah: "+describe(t)+". Alasan: "+reason:describe(t);break;
     }
+    case "deleteTransaction":
     case "voidTransaction":{
       const t=state.transactions.find(t=>t.id===p.id);if(!t || t.voidedAt)throw new LedgerError("Transaksi tidak ditemukan atau sudah dibatalkan.");t.voidReason=text(p.reason,"Alasan pembatalan",200);t.voidedAt=now;checkCash(state);
-      message="Transaksi dibatalkan. Riwayat tetap tersimpan.";detail=t.title+" · Rp"+t.amount+" · alasan: "+t.voidReason;break;
+      message=action==="deleteTransaction"?"Transaksi dihapus dari perhitungan. Riwayat tetap tersimpan.":"Transaksi dibatalkan. Riwayat tetap tersimpan.";detail=t.title+" · Rp"+t.amount+" · alasan: "+t.voidReason;break;
     }
+    case "deleteBill":
     case "voidBill":{
       const b=state.bills.find(b=>b.id===p.id);if(!b || b.voidedAt)throw new LedgerError("Tagihan tidak ditemukan atau sudah dibatalkan.");b.voidReason=text(p.reason,"Alasan pembatalan",200);b.voidedAt=now;
-      message="Tagihan dibatalkan.";detail=b.period+" · "+state.members.find(m=>m.id===b.memberId)?.name+" · "+b.voidReason;break;
+      message=action==="deleteBill"?"Tagihan dihapus dari perhitungan. Riwayat tetap tersimpan.":"Tagihan dibatalkan.";detail=b.period+" · "+state.members.find(m=>m.id===b.memberId)?.name+" · "+b.voidReason;break;
     }
     case "settings":{
       const next=validateSettings(p,state.settings.snapshotDate);if(next.billingStartMonth<next.snapshotDate.slice(0,7))throw new LedgerError("Bulan tagihan tidak boleh sebelum data awal.");
@@ -124,6 +160,6 @@ export function applyAction(original:Ledger,action:string,p:any,requestId:string
     case "restore":{if(p.confirmation!=="PULIHKAN")throw new LedgerError("Ketik PULIHKAN untuk mengganti data dari cadangan.");state=validateBackup(p.backup);message="Cadangan berhasil dipulihkan.";detail="Memulihkan "+state.members.length+" anggota dan "+state.transactions.length+" transaksi; sebelumnya "+original.transactions.length+" transaksi.";break;}
     default:throw new LedgerError("Aksi tidak dikenal.");
   }
-  state.appliedRequests=[...original.appliedRequests,requestId].slice(-200);state.audit.push({id:id(),at:now,action:({saveMember:"Data anggota",createBills:"Tagihan bulanan",saveTransaction:"Transaksi kas",voidTransaction:"Pembatalan transaksi",voidBill:"Pembatalan tagihan",settings:"Pengaturan",restore:"Pemulihan cadangan"} as Record<string,string>)[action],detail,actor});state.audit=state.audit.slice(-2000);
+  state.appliedRequests=[...original.appliedRequests,requestId].slice(-200);state.audit.push({id:id(),at:now,action:({saveMember:"Data anggota",deleteMember:"Penghapusan anggota",createBills:"Tagihan bulanan",saveBill:"Data tagihan",saveTransaction:"Transaksi kas",deleteTransaction:"Penghapusan transaksi",deleteBill:"Penghapusan tagihan",voidTransaction:"Pembatalan transaksi",voidBill:"Pembatalan tagihan",settings:"Pengaturan",restore:"Pemulihan cadangan"} as Record<string,string>)[action],detail,actor});state.audit=state.audit.slice(-2000);
   if(JSON.stringify(state).length>1_500_000)throw new LedgerError("Data mencapai batas penyimpanan. Unduh cadangan dan buat arsip periode.");return {state,message};
 }

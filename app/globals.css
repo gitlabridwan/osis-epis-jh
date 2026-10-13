@@ -16,3 +16,31 @@ main{padding:32px 37px 15px;max-width:1740px;margin:auto}.page-head{display:flex
 @media(max-width:360px){main{padding-left:13px;padding-right:13px}.topbar{padding:0 13px}.stat-value{font-size:21px}.stat-card{padding:15px 12px}.stat-top{font-size:8px}.stat-icon{width:23px;height:23px}.stat-foot{font-size:7px}.balance-card .stat-foot{font-size:7px}.period-control input{width:108px}.form-grid{grid-template-columns:1fr}.field.wide{grid-column:auto}.report-header{flex-direction:column}.report-header>div:last-child{text-align:left}.mini-stats strong{font-size:18px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 @media print{@page{size:A4 portrait;margin:14mm}:root{--surface:#fff;--bg:#fff;--text:#172b21;--muted:#68766a;--line:#ddd;--green:#1c7055;--orange-light:#fff4e9;--red:#bb644e;color-scheme:light}body{font-size:10pt;background:#fff}.sidebar,.topbar,.page-head,.banner,.app-footer,.toast,.report-actions,.nav-backdrop,.modal{display:none!important}.workspace{margin:0}main{padding:0;max-width:none}.report-panel{border:0;box-shadow:none;border-radius:0;overflow:visible}.report-header{padding:0 0 20px}.report-header h2{font-size:20pt}.report-header p,.report-header>div:last-child span{font-size:9pt}.report-kicker{font-size:8pt}.report-header>div:last-child strong{font-size:12pt}.report-totals{padding:22px 0;grid-template-columns:repeat(4,1fr);gap:12px}.report-totals strong{font-size:13pt}.report-totals span{font-size:8pt}.table-wrap{overflow:visible}.table-wrap table{min-width:0;font-size:8pt}th,td,th:first-child,td:first-child,th:last-child,td:last-child{padding:9px 7px}th{font-size:8pt}thead{display:table-header-group}tr{break-inside:avoid}.cell-sub{font-size:7pt}.badge{font-size:7pt}.report-members{background:#fff;padding:20px 0;break-inside:avoid}.report-members h3{font-size:9pt}.report-members>div>span{font-size:8pt}.report-members strong{font-size:10pt}.report-members p{font-size:7pt}.report-warning{font-size:8pt;padding:10px 0;background:#fff}.report-signature{padding:30px 20px;break-inside:avoid}.report-signature span{font-size:9pt}.report-signature strong{font-size:9pt}.empty{padding:25px 10px}.empty p{font-size:9pt}.empty strong{font-size:11pt}.empty-icon{display:none}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+
+/* Account entry pages reuse the ledger's colors and form controls. */
+.auth-screen{min-height:100dvh;max-width:none;display:grid;place-items:center;padding:48px 22px;background:radial-gradient(ellipse at 15% 12%,#dfede4 0,transparent 48%),radial-gradient(ellipse at 90% 90%,#ede8de 0,transparent 42%),var(--bg)}
+.auth-container{width:100%;max-width:460px}
+.auth-brand{display:flex;align-items:center;justify-content:center;gap:8px;font-size:29px;color:var(--text);text-decoration:none;margin-bottom:30px;font-weight:750;letter-spacing:-1.4px}
+.auth-brand>span{display:grid;place-items:center;width:46px;height:46px;margin-right:4px;border-radius:14px;background:var(--green);color:#fff}
+.auth-brand b{color:var(--green);font-weight:750;margin-left:-7px}
+.auth-card{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:34px;box-shadow:0 20px 65px #223b2b0c}
+.auth-eyebrow{font-size:10px;font-weight:750;letter-spacing:1.6px;color:var(--green);margin:0 0 12px}
+.auth-card h1{font-size:28px;line-height:1.25;letter-spacing:-1px;margin:0 0 12px;color:var(--text)}
+.auth-card h1>span{color:var(--green)}
+.auth-description{font-size:13px;line-height:1.8;color:var(--muted);margin:0 0 26px}
+.auth-fields{border:0;padding:0;margin:0;display:grid;gap:18px;min-width:0}
+.auth-fields .field{margin:0}
+.auth-fields .field label{font-size:12px}
+.auth-fields input{width:100%;font-size:14px;min-height:46px}
+.auth-password{position:relative}
+.auth-password input{padding-right:46px}
+.auth-password button{position:absolute;right:4px;top:4px;display:grid;place-items:center;width:38px;height:38px;border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:8px}
+.auth-password button:focus-visible{outline:2px solid var(--green);outline-offset:1px}
+.auth-submit{min-height:46px;margin-top:24px;font-size:13px}
+.auth-switch{text-align:center;font-size:12px;color:var(--muted);margin:23px 0 0;line-height:1.8}
+.auth-switch a{font-weight:650;color:var(--green);text-underline-offset:3px}
+.auth-note{display:flex;align-items:center;justify-content:center;gap:10px;font-size:11px;line-height:1.8;color:var(--muted);margin:22px 0 0;text-align:left}
+.auth-error{display:flex;align-items:flex-start;gap:8px;margin-top:18px;line-height:1.6}
+.auth-error svg{flex-shrink:0;margin-top:2px}
+.account-info .text-button{justify-content:center;margin:12px auto 0}
+@media(max-width:480px){.auth-screen{padding:28px 16px}.auth-brand{font-size:27px;margin-bottom:24px}.auth-card{padding:27px 22px;border-radius:18px}.auth-card h1{font-size:25px}.auth-description{font-size:12px}}

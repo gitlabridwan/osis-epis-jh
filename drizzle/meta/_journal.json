@@ -8,6 +8,13 @@
       "when": 1791864686921,
       "tag": "0000_dusty_hammerhead",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1791871886245,
+      "tag": "0001_auth_accounts",
+      "breakpoints": true
     }
   ]
 }

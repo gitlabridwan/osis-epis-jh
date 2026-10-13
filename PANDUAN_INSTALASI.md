@@ -1,102 +1,123 @@
-# Panduan Instalasi Kas OSIS EPIS-JH
-
-Paket ini berisi kode sumber aplikasi, antarmuka, logika pencatatan kas, skema basis data, migrasi SQL, dan pengujian otomatis.
-
-Aplikasi online: https://kas-osis-epis-jh.jigen836152.chatgpt.site
-Aplikasi rujukan: https://fahirraffa-prog.github.io/List-uang-kas-osis/
+# Panduan Instalasi — Kas OSIS EPIS-JH CRUD + Login/Register
 
 ## 1. Persiapan
 
-1. Ekstrak ZIP ke folder yang dapat ditulis, misalnya C:\Aplikasi\Kas_OSIS_EPIS_JH.
-2. Pasang Node.js 24, versi utama yang dipakai saat memverifikasi kode aplikasi.
-3. Buka Terminal atau PowerShell dari folder yang berisi package.json.
-4. Pasang pnpm sesuai versi paket:
+1. Ekstrak ZIP dan buka folder `Kas_OSIS_EPIS_JH` yang berisi `package.json`.
+2. Pasang Node.js 24.
+3. Buka Terminal atau PowerShell di folder tersebut.
+4. Pasang pnpm:
 
 ```sh
 npm install --global pnpm@11.25.0
 ```
 
-Tidak perlu menginstal PHP, XAMPP, atau MySQL. Aplikasi menggunakan Node.js dan Cloudflare D1, dengan basis data SQLite untuk pengujian lokal.
+Aplikasi menggunakan Cloudflare Workers dan D1 SQLite. Tidak membutuhkan PHP, XAMPP, atau MySQL. Koneksi internet diperlukan untuk instalasi dependensi pertama.
 
-## 2. Instal dependensi dan buat build
-
-Jalankan dari folder proyek:
+## 2. Instalasi baru
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm build
-```
-
-Instalasi pertama membutuhkan koneksi internet. Folder node_modules tidak disertakan dalam ZIP.
-
-## 3. Buat tabel basis data lokal
-
-Setelah build berhasil, jalankan perintah berikut sebagai satu baris:
-
-```sh
-node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_dusty_hammerhead.sql
-```
-
-Jalankan migrasi awal ini satu kali untuk basis data lokal yang baru. Jangan menjalankannya ulang setelah tabel sudah ada. Berkas basis data lokal tersimpan di folder .wrangler/state.
-
-## 4. Jalankan aplikasi
-
-```sh
+pnpm db:migrate
 pnpm dev
 ```
 
-Buka http://localhost:5173 atau alamat yang tercetak pada terminal. Biarkan terminal tetap berjalan selama aplikasi digunakan. Tekan Ctrl+C untuk menghentikannya.
+`pnpm db:migrate` membuat tabel buku kas, akun, sesi, dan pembatasan percobaan pada database lokal. Wrangler mencatat migrasi yang sudah diterapkan sehingga perintah ini dapat dijalankan kembali tanpa mengulang migrasi.
 
-Lingkungan pengembangan lokal memakai identitas masuk simulasi dari starter. Identitas ini hanya untuk pengujian pada komputer sendiri. Autentikasi aplikasi online mengikuti akun pemilik di Sites.
+Buka `http://localhost:5173` atau alamat yang tercetak di terminal. Halaman utama mengarahkan pengguna yang belum masuk ke `/login`.
 
-Perintah pnpm start menjalankan hasil build tanpa simulasi masuk. Gunakan pnpm dev untuk pengujian lokal aplikasi ini.
+## 3. Register, login, dan logout
 
-## 5. Isi pengaturan awal
+1. Klik **Register akun baru** pada halaman login.
+2. Isi nama lengkap, email, kata sandi 12–128 karakter, dan konfirmasi kata sandi.
+3. Klik **Daftar akun**. Setelah berhasil, aplikasi membuka buku kas akun tersebut.
+4. Untuk keluar, klik ikon logout di bagian atas atau **Keluar dari akun** pada Pengaturan.
+5. Untuk masuk lagi, gunakan email dan kata sandi pada halaman Login.
 
-1. Buka menu Pengaturan.
-2. Isi nama sekolah, nama bendahara, dan tahun kepengurusan.
-3. Konfirmasi saldo kas yang benar-benar tersedia per 1 Oktober 2026.
-4. Sesuaikan nominal iuran dan bulan mulai tagihan.
-5. Buka Iuran bulanan untuk membuat tagihan.
-6. Gunakan Catat transaksi untuk pembayaran, pemasukan lain, atau pengeluaran.
+Tidak ada akun bawaan. Email tidak boleh terdaftar dua kali; perbedaan huruf besar/kecil tidak menghasilkan akun lain. Sesi berlaku 7 hari. Logout membatalkan sesi di server. Terlalu banyak percobaan login akan dibatasi selama 10 menit, sedangkan pendaftaran dibatasi per jam.
 
-Data awal mengikuti rujukan: 12 anggota, tunggakan Rp80.000, dan kelebihan pembayaran Rp70.000. Saldo uang kas lama tidak tersedia dalam rujukan. Default iuran Rp10.000 per bulan dan bulan mulai November 2026 dapat diubah.
+Setiap akun memiliki buku kas sendiri. Akun baru tidak otomatis mendapat data akun lain. Email belum menggunakan verifikasi dan belum tersedia fitur lupa kata sandi.
 
-Tagihan dan saldo awal iuran tidak menambah uang kas. Pembayaran baru menambah uang kas saat transaksi penerimaan dicatat.
+## 4. Pengaturan dan CRUD
 
-## 6. Laporan dan cadangan
+- **Pengaturan**: isi identitas organisasi, nama bendahara, tarif iuran, bulan mulai tagihan, serta saldo kas yang benar-benar tersedia per 1 Oktober 2026. Konfirmasikan saldo awal sebelum membuat pengeluaran.
+- **Anggota**: gunakan Tambah anggota, klik nama untuk melihat detail, ikon pensil untuk edit, dan ikon tempat sampah untuk hapus. Anggota dengan saldo iuran awal, tagihan, atau riwayat transaksi harus diarsipkan melalui Edit anggota → Keaktifan → Diarsipkan.
+- **Transaksi**: gunakan Catat transaksi untuk iuran, pemasukan, atau pengeluaran. Ikon pensil mengedit catatan yang ada; perubahan membutuhkan alasan dan menghitung ulang saldo. Ikon tempat sampah menghapus catatan dari perhitungan dengan alasan. Centang Tampilkan yang dihapus untuk melihat catatan tersebut.
+- **Iuran bulanan**: Buat tagihan membuat tagihan bagi anggota aktif yang belum ditagih. Tambah tagihan membuat satu tagihan untuk anggota tertentu. Ikon pensil mengedit tagihan; ikon tempat sampah menghapusnya dari kewajiban aktif. Satu anggota hanya memiliki satu tagihan aktif untuk setiap bulan.
+- **Laporan**: pilih bulan, unduh CSV, atau cetak dan pilih Simpan sebagai PDF.
 
-- Laporan: pilih bulan, unduh CSV, atau cetak lalu pilih Simpan sebagai PDF.
-- Pengaturan: unduh cadangan JSON untuk menyimpan seluruh isi buku kas.
-- Pulihkan cadangan JSON untuk memindahkan data ke instalasi aplikasi ini.
+Transaksi yang diedit tidak menjadi transaksi baru. Riwayat perubahan mencatat keadaan sebelum dan sesudah koreksi. Penghapusan transaksi/tagihan mempertahankan catatan asli dan mengabaikannya dalam perhitungan. Edit atau hapus yang membuat saldo kas negatif akan ditolak.
 
-ZIP ini berisi kode sumber dan data awal rujukan. Data transaksi yang kemudian dicatat dalam aplikasi online tidak tersalin otomatis ke ZIP. Untuk memindahkan data tersebut, unduh cadangan JSON melalui aplikasi online dan pulihkan pada instalasi lokal.
+## 5. Meningkatkan instalasi lama
+
+Sebelum mengganti kode lama, masuk ke aplikasi lama dan **unduh cadangan JSON melalui Pengaturan**. Kode sumber ZIP tidak memuat transaksi yang kemudian dicatat pada aplikasi online.
+
+### Jika migrasi lama dijalankan secara manual
+
+Panduan versi sebelumnya menggunakan `d1 execute --file` untuk membuat `kas_ledgers`. Perintah tersebut tidak mencatat riwayat migrasi Wrangler. Jika itu cara Anda memasang versi lama, jalankan hanya migrasi baru setelah build:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_auth_accounts.sql
+pnpm dev
+```
+
+Jalankan SQL baru tersebut satu kali. Jangan menggunakan `pnpm db:migrate` pada database lama yang tabel awalnya dibuat manual, karena Wrangler akan menganggap migrasi awal belum diterapkan dan pembuatan tabel yang sudah ada akan gagal. Alternatifnya, gunakan instalasi baru di folder terpisah dan pulihkan cadangan JSON.
+
+### Jika migrasi lama memakai riwayat Wrangler
+
+Setelah memasang kode baru dan menjalankan build, gunakan `pnpm db:migrate`; hanya migrasi yang belum tercatat akan diterapkan.
+
+Setelah database siap:
+
+1. Buka Register dan buat akun email baru.
+2. Masuk ke Pengaturan → Pulihkan cadangan.
+3. Pilih cadangan JSON dari versi lama, periksa ringkasannya, lalu ketik `PULIHKAN`.
+4. Periksa saldo, anggota, tagihan, dan transaksi.
+
+Baris buku kas lama `main` tidak dihapus atau dialihkan ke pendaftar. Akun baru memakai buku kas berdasarkan identitas sesi. Akun ChatGPT lama tidak berubah menjadi akun email secara otomatis.
+
+## 6. Menjalankan hasil build
+
+```sh
+pnpm build
+pnpm start
+```
+
+Buka alamat yang tercetak di terminal. Hasil build juga memakai login email/kata sandi yang sama, tanpa identitas simulasi. Database lokal tetap menggunakan `.wrangler/state`. Biarkan terminal berjalan selama aplikasi dipakai; hentikan dengan Ctrl+C.
 
 ## 7. Pemeriksaan kode
 
 ```sh
 pnpm test
+pnpm test:runtime
 pnpm exec tsc --noEmit
+pnpm build
 ```
 
-Kode aplikasi telah melewati 15 pengujian otomatis, pemeriksaan TypeScript, dan build. Tampilan belum diperiksa langsung melalui browser pada sesi pembuatannya.
+`pnpm test` memeriksa logika kas, autentikasi dengan SQLite, isolasi akun, serta render awal. `pnpm test:runtime` menjalankan autentikasi dan CRUD pada runtime Workers/D1, termasuk hashing kata sandi yang benar-benar digunakan aplikasi. Pemeriksaan ini tidak menggantikan pemeriksaan tampilan dan interaksi melalui browser.
 
-## 8. Struktur penting
+## 8. Berkas penting
 
-- app/page.tsx: halaman utama.
-- app/api/ledger/route.ts: API dan penyimpanan kas.
-- components/kas-app.tsx: antarmuka dan formulir.
-- app/globals.css: tampilan desktop, ponsel, dan cetak.
-- lib/ledger.ts: data awal, tagihan, perhitungan, dan validasi.
-- db/schema.ts: skema penyimpanan.
-- drizzle/: migrasi basis data.
-- tests/: pengujian perhitungan, API, dan render.
-- pnpm-lock.yaml: versi dependensi untuk instalasi.
+- `app/login/page.tsx`, `app/register/page.tsx`: halaman akun.
+- `components/auth-form.tsx`: formulir login/register.
+- `app/api/auth/`: API register, login, logout, dan sesi.
+- `lib/auth.ts`, `lib/password.ts`, `lib/http.ts`: autentikasi, hashing, dan validasi permintaan.
+- `app/page.tsx`: halaman utama yang dilindungi login.
+- `app/api/ledger/route.ts`: penyimpanan buku kas per akun.
+- `components/kas-app.tsx`: antarmuka CRUD dan laporan.
+- `lib/ledger.ts`: logika kas, validasi, dan jejak perubahan.
+- `db/schema.ts`, `drizzle/`: skema serta dua migrasi SQL.
+- `scripts/migrate-db.mjs`: migrasi lokal dengan riwayat Wrangler.
+- `tests/`: pengujian logika, API, render, dan runtime.
 
 ## 9. Penempatan online
 
-Paket ini merupakan aplikasi dengan backend, sehingga tidak dapat ditempatkan langsung sebagai halaman statis di GitHub Pages. Publikasi penuh memerlukan lingkungan Cloudflare Workers dengan D1 dan autentikasi yang sesuai, atau alur Sites.
+Gunakan backend Cloudflare Workers dengan database D1 milik Anda atau lingkungan Sites yang mendukung proyek ini. Jalankan migrasi `0000_dusty_hammerhead.sql` dan `0001_auth_accounts.sql` pada database produksi baru; untuk database produksi lama, terapkan hanya migrasi yang belum ada. Gunakan HTTPS agar cookie sesi memakai Secure.
 
-Konfigurasi ZIP tidak menyertakan ID publikasi aplikasi yang sudah online. Kode aplikasi tetap sama; pengaturan instalasi dibuat dapat digunakan pada komputer lain. Koneksi basis data produksi dan kredensial tidak disertakan.
+Konfigurasi sumber memakai ID D1 placeholder untuk pengembangan lokal. ID database produksi, kredensial, data transaksi online, serta akun dan sesi tidak disertakan. Mengganti ZIP ini tidak memperbarui aplikasi online secara otomatis.
+
+Cadangan JSON menyimpan buku kas, bukan akun login. Cadangkan database D1 secara terpisah jika ingin memindahkan akun dan seluruh sesi ke instalasi lain.
 
 Karya awal: Raden Adrian Kahfi dan Fahir Raffa Danishwara.

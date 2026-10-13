@@ -18,3 +18,76 @@ test("Nominal negatif, uang pecahan, dan tanggal tidak sah ditolak",()=>{let s=i
 
 // A malformed timestamp must not break the activity panel after restoring a file.
 test("Cadangan menolak timestamp rusak dan dapat memulihkan alasan koreksi panjang",()=>{let s=pay(initialLedger(),"m-qai",10000);let bad=structuredClone(s);bad.audit[0].at="not-a-date";assert.throws(()=>validateBackup(bad),/Waktu/);s=act(s,"voidTransaction",{id:s.transactions[0].id,reason:"Koreksi "+"x".repeat(180)});assert.equal(validateBackup(s).transactions[0].voidReason.length,188);});
+
+test("CRUD anggota menghapus anggota tanpa riwayat dan menjaga referensi keuangan", () => {
+  let s = act(initialLedger(), "saveMember", { name: "Anggota Tambahan", division: "Jurnalistik", className: "XI", joinedMonth: "2026-10", active: true, openingDue: 0, openingCredit: 0 });
+  const member = s.members.at(-1);
+  s = act(s, "saveMember", { ...member, name: "Nama Diperbarui" });
+  assert.equal(s.members.at(-1).id, member.id); assert.equal(s.members.at(-1).name, "Nama Diperbarui");
+  assert.throws(() => act(s, "deleteMember", { id: member.id, reason: " " }), /Alasan/);
+  s = act(s, "deleteMember", { id: member.id, reason: "Salah menambahkan anggota" });
+  assert.equal(s.members.length, 12); assert.equal(s.audit.at(-1).action, "Penghapusan anggota");
+  assert.throws(() => act(s, "deleteMember", { id: "m-qai", reason: "Keluar" }), /saldo iuran awal/);
+  s = pay(s, "m-raffa", 10000);
+  assert.throws(() => act(s, "deleteMember", { id: "m-raffa", reason: "Keluar" }), /riwayat/);
+  s = act(s, "saveMember", { ...s.members.find(m => m.id === "m-raffa"), active: false });
+  assert.equal(s.transactions[0].memberId, "m-raffa"); assert.ok(!s.members.find(m => m.id === "m-raffa").active);
+});
+
+test("Edit transaksi menghitung ulang kas dan anggota tanpa menambah transaksi", () => {
+  let s = pay(initialLedger(), "m-qai", 40000); const old = { ...s.transactions[0] };
+  assert.throws(() => act(s, "saveTransaction", { ...old, amount: 25000 }), /Alasan perubahan/);
+  s = act(s, "saveTransaction", { ...old, amount: 25000, reference: "BUKTI-01", correctionReason: "Salah nominal" });
+  assert.equal(s.transactions.length, 1); assert.equal(s.transactions[0].createdAt, old.createdAt);
+  assert.equal(cashBalance(s), 25000); assert.equal(memberAccount(s, s.members.find(m => m.id === "m-qai")).arrears, 15000);
+  assert.match(s.audit.at(-1).detail, /Rp40000/); assert.match(s.audit.at(-1).detail, /Rp25000/); assert.match(s.audit.at(-1).detail, /Salah nominal/);
+  s = act(s, "saveTransaction", { ...s.transactions[0], memberId: "m-selma", correctionReason: "Koreksi nama anggota" });
+  assert.equal(memberAccount(s, s.members.find(m => m.id === "m-qai")).arrears, 40000);
+  assert.equal(memberAccount(s, s.members.find(m => m.id === "m-selma")).arrears, 15000);
+  s = act(s, "saveTransaction", { ...s.transactions[0], kind: "income", category: "Donasi", correctionReason: "Koreksi jenis penerimaan" });
+  assert.equal(s.transactions[0].memberId, null); assert.equal(cashBalance(s), 25000);
+  assert.equal(validateBackup(s).transactions[0].id, old.id);
+});
+
+test("Edit penerimaan dan hapus transaksi tidak boleh membuat kas negatif", () => {
+  let s = act(initialLedger(), "settings", { ...initialLedger().settings, openingCashConfirmed: true });
+  s = pay(s, "m-qai", 40000);
+  s = act(s, "saveTransaction", { kind: "expense", amount: 30000, date: today(), title: "Kegiatan", category: "Kegiatan", method: "Tunai" });
+  assert.throws(() => act(s, "saveTransaction", { ...s.transactions[0], amount: 20000, correctionReason: "Koreksi nominal" }), /Saldo kas tidak cukup/);
+  assert.throws(() => act(s, "deleteTransaction", { id: s.transactions[0].id, reason: "Salah catat" }), /Saldo kas tidak cukup/);
+  assert.equal(cashBalance(s), 10000); assert.equal(s.transactions[0].amount, 40000);
+  s = act(s, "deleteTransaction", { id: s.transactions[1].id, reason: "Pengeluaran batal" });
+  assert.equal(cashBalance(s), 40000); assert.equal(s.transactions.length, 2);
+  assert.throws(() => act(s, "saveTransaction", { ...s.transactions[1], correctionReason: "Coba edit" }), /sudah dihapus/);
+});
+
+test("CRUD tagihan individual menolak duplikat dan menghitung ulang kredit", () => {
+  let s = act(initialLedger(), "saveBill", { memberId: "m-dzuka", period: "2026-11", amount: 10000 });
+  const bill = s.bills[0]; assert.deepEqual(billAccount(s, bill), { paid: 10000, remaining: 0 });
+  assert.throws(() => act(s, "saveBill", { memberId: "m-dzuka", period: "2026-11", amount: 20000 }), /sudah memiliki/);
+  s = act(s, "saveBill", { ...bill, amount: 5000, correctionReason: "Tarif khusus" });
+  assert.equal(s.bills.length, 1); assert.equal(s.bills[0].createdAt, bill.createdAt);
+  assert.equal(memberAccount(s, s.members[0]).credit, 5000); assert.equal(cashBalance(s), 0);
+  s = act(s, "deleteBill", { id: bill.id, reason: "Tagihan salah periode" });
+  assert.equal(memberAccount(s, s.members[0]).credit, 10000);
+  assert.throws(() => act(s, "saveBill", { ...bill, correctionReason: "Edit catatan dihapus" }), /sudah dihapus/);
+  s = act(s, "saveBill", { memberId: "m-dzuka", period: "2026-11", amount: 15000 });
+  assert.equal(s.bills.filter(b => !b.voidedAt).length, 1); assert.equal(validateBackup(s).bills.length, 2);
+});
+
+test("CRUD menolak ID yang hilang serta payload tidak valid", () => {
+  const s = initialLedger();
+  assert.throws(() => act(s, "saveTransaction", { id: "missing" }), /tidak ditemukan/);
+  assert.throws(() => act(s, "saveBill", { id: "missing" }), /tidak ditemukan/);
+  assert.throws(() => act(s, "deleteMember", { id: "missing", reason: "Salah" }), /tidak ditemukan/);
+  assert.throws(() => act(s, "saveMember", null), /tidak valid/);
+  assert.throws(() => act(s, "saveMember", []), /tidak valid/);
+});
+
+test("Tagihan lama tetap dapat dikoreksi setelah bulan mulai iuran diubah", () => {
+  let s = act(initialLedger(), "saveBill", { memberId: "m-raffa", period: "2026-11", amount: 10000 });
+  s = act(s, "settings", { ...s.settings, billingStartMonth: "2026-12" });
+  s = act(s, "saveBill", { ...s.bills[0], amount: 15000, correctionReason: "Koreksi nominal tagihan lama" });
+  assert.equal(s.bills[0].amount, 15000);
+  assert.throws(() => act(s, "saveBill", { memberId: "m-alizha", period: "2026-11", amount: 10000 }), /Periode/);
+});
