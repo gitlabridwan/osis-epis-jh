@@ -1,0 +1,25 @@
+import {test} from "node:test";
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import {DatabaseSync} from "node:sqlite";
+import {today} from "../.sites-runtime/test-build/ledger.mjs";
+const sqlite=new DatabaseSync(":memory:");sqlite.exec(readFileSync(new URL("../drizzle/0000_dusty_hammerhead.sql",import.meta.url),"utf8"));
+globalThis.__kasTestEnv={DB:{prepare(sql){let values=[];return {bind(...v){values=v;return this;},async first(){return sqlite.prepare(sql).get(...values)||null;},async run(){const r=sqlite.prepare(sql).run(...values);return {meta:{changes:Number(r.changes)}};}};}}};
+globalThis.__kasTestUser=null;
+const {GET,POST}=await import("../.sites-runtime/test-build/api.mjs");
+const post=(revision,action,payload,requestId=crypto.randomUUID(),origin="https://kas.example")=>POST(new Request("https://kas.example/api/ledger",{method:"POST",headers:{"Content-Type":"application/json","Origin":origin},body:JSON.stringify({revision,action,payload,requestId})}));
+test("API: autentikasi, SQLite, konflik perangkat, idempotensi, dan perlindungan kas",async()=>{
+  assert.equal((await GET()).status,401);assert.equal(sqlite.prepare("select count(*) as n from kas_ledgers").get().n,0);
+  globalThis.__kasTestUser={userId:"owner",email:"owner@example.test"};let r=await GET();assert.equal(r.status,200);let d=await r.json();assert.equal(d.revision,0);assert.equal(d.state.members.length,12);assert.match(r.headers.get("cache-control"),/no-store/);
+  const settings={...d.state.settings,openingCashConfirmed:true};r=await post(0,"settings",settings);assert.equal(r.status,200);d=await r.json();assert.equal(d.revision,1);
+  const payment={kind:"dues",memberId:"m-qai",amount:10000,date:today(),title:"Pembayaran kas",method:"Tunai"};
+  const sameRevision=await Promise.all([post(1,"saveTransaction",payment),post(1,"saveTransaction",payment)]);assert.deepEqual(sameRevision.map(r=>r.status).sort(),[200,409]);d=await (await GET()).json();assert.equal(d.state.transactions.length,1);assert.equal(d.revision,2);
+  const req=crypto.randomUUID();r=await post(2,"saveTransaction",payment,req);assert.equal(r.status,200);r=await post(2,"saveTransaction",payment,req);assert.equal(r.status,200);d=await r.json();assert.equal(d.state.transactions.length,2);assert.equal(d.revision,3);
+  r=await post(1,"settings",settings);assert.equal(r.status,409);const stale=await r.json();assert.equal(stale.revision,3);assert.equal(stale.state.transactions.length,2);
+  r=await post(3,"saveTransaction",payment,crypto.randomUUID(),"https://other.example");assert.equal(r.status,403);
+  r=await post(3,"saveTransaction",{...payment,amount:-1});assert.equal(r.status,400);
+  r=await post(3,"saveTransaction",{kind:"expense",amount:25000,date:today(),title:"Peralatan",category:"Perlengkapan",method:"Tunai"});assert.equal(r.status,400);
+  const stored=sqlite.prepare("select revision,payload from kas_ledgers where id='main'").get();assert.equal(stored.revision,3);assert.equal(JSON.parse(stored.payload).transactions.length,2);
+  globalThis.__kasTestUser={userId:"another-user",email:"other@example.test"};assert.equal((await GET()).status,403);
+  globalThis.__kasTestUser=null;assert.equal((await post(3,"saveTransaction",payment)).status,401);
+});
